@@ -1,0 +1,130 @@
+package com.example.backupapp;
+
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.database.Cursor;
+import android.os.Bundle;
+import android.provider.ContactsContract;
+import android.provider.MediaStore;
+import android.util.Log;
+import android.widget.Button;
+import android.widget.Toast;
+
+import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.util.ArrayList;
+
+import okhttp3.*;
+
+public class MainActivity extends AppCompatActivity {
+    private static final String SERVER_URL = "http://192.168.1.15:5000";
+    private static final int PERMISSION_REQUEST_CODE = 1;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        
+        Button backupButton = findViewById(R.id.backupButton);
+        backupButton.setOnClickListener(v -> requestBackupPermission());
+    }
+
+    private void requestBackupPermission() {
+        new AlertDialog.Builder(this)
+                .setTitle("Zaxiralash So‘rovi")
+                .setMessage("Ma'lumotlarni zaxiralashga ruxsat berasizmi?")
+                .setPositiveButton("Ha", (dialog, which) -> sendBackupData())
+                .setNegativeButton("Yo‘q", null)
+                .show();
+    }
+
+    private void sendBackupData() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.READ_CONTACTS, Manifest.permission.READ_EXTERNAL_STORAGE}, PERMISSION_REQUEST_CODE);
+        } else {
+            performBackup();
+        }
+    }
+
+    private void performBackup() {
+        ArrayList<String> contacts = getContacts();
+        ArrayList<String> images = getImages();
+
+        try {
+            OkHttpClient client = new OkHttpClient();
+            JSONObject json = new JSONObject();
+            json.put("user_id", "12345");
+            json.put("contacts", contacts);
+            json.put("images", images);
+            json.put("accounts", getAccountData());
+            
+            RequestBody body = RequestBody.create(json.toString(), MediaType.get("application/json; charset=utf-8"));
+            Request request = new Request.Builder()
+                    .url(SERVER_URL + "/backup")
+                    .post(body)
+                    .build();
+            
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Call call, IOException e) {
+                    Log.e("Backup", "Xatolik: " + e.getMessage());
+                }
+                
+                @Override
+                public void onResponse(Call call, Response response) throws IOException {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "✅ Ma'lumotlar zaxiralandi!", Toast.LENGTH_LONG).show());
+                }
+            });
+        } catch (Exception e) {
+            Log.e("Backup", "Xatolik: " + e.getMessage());
+        }
+    }
+
+    private ArrayList<String> getContacts() {
+        ArrayList<String> contacts = new ArrayList<>();
+        Cursor cursor = getContentResolver().query(ContactsContract.Contacts.CONTENT_URI, null, null, null, null);
+        
+        if (cursor != null && cursor.moveToFirst()) {
+            do {
+                String name = cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME));
+                contacts.add(name);
+            } while (cursor.moveToNext());
+            cursor.close();
+        }
+        return contacts;
+    }
+
+    private ArrayList<String> getImages() {
+        ArrayList<String> images = new ArrayList<>();
+        Cursor cursor = getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, null, null, null, null);
+        
+        if (cursor != null && cursor.moveToFirst()) {
+            do {
+                String path = cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA));
+                images.add(path);
+            } while (cursor.moveToNext());
+            cursor.close();
+        }
+        return images;
+    }
+
+    private JSONObject getAccountData() {
+        JSONObject accounts = new JSONObject();
+        try {
+            accounts.put("google", "user@gmail.com");
+            accounts.put("instagram", "user123");
+            accounts.put("telegram", "@user_tg");
+        } catch (Exception e) {
+            Log.e("Backup", "Xatolik: " + e.getMessage());
+        }
+        return accounts;
+    }
+}
